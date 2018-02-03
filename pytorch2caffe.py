@@ -13,14 +13,14 @@ import pydot
 
 layer_dict = {'ConvNdBackward': 'Convolution',
               'ThresholdBackward': 'ReLU',
-              'MaxPool2dBackward': 'Pooling',
+              'MaxPool2DBackward': 'Pooling',
               'AvgPool2dBackward': 'Pooling',
               'DropoutBackward': 'Dropout',
               'AddmmBackward': 'InnerProduct',
               'BatchNormBackward': 'BatchNorm',
               'AddBackward': 'Eltwise',
               'ViewBackward': 'Reshape',
-              'ConcatBackward': 'Concat',
+              'CatBackward': 'Concat',
               'UpsamplingNearest2d': 'Deconvolution',
               'UpsamplingBilinear2d': 'Deconvolution',
               'SigmoidBackward': 'Sigmoid',
@@ -162,6 +162,7 @@ def pytorch2prototxt(input_var, output_var):
         parent_name = parent_type + str(layer_id)
         layer = OrderedDict()
         layer['name'] = parent_name
+        print(layer_dict[parent_type])
         layer['type'] = layer_dict[parent_type]
         parent_top = parent_name
         if len(parent_bottoms) > 0:
@@ -210,25 +211,39 @@ def pytorch2prototxt(input_var, output_var):
             conv_param['bias_term'] = 'false'
             layer['convolution_param'] = conv_param
             layer['param'] = {'lr_mult': 0, 'decay_mult': 0}
-        elif parent_type == 'ConcatBackward':
+        elif parent_type == 'CatBackward':
             concat_param = OrderedDict()
-            concat_param['axis'] = func.dim
+            concat_param['axis'] = 1 #func.dim
             layer['concat_param'] = concat_param
         elif parent_type == 'ConvNdBackward':
             # Only for UpsamplingCaffe
-            if func.transposed is True and func.next_functions[1][0] is None:
+            print(func.transposed)
+            if func.transposed is True:# and func.next_functions[1][0] is None:
                 layer['type'] = layer_dict['UpsamplingBilinear2d']
+                weights = func.next_functions[1][0].variable
                 conv_param = OrderedDict()
-                factor = func.stride[0]
-                conv_param['num_output'] = func.next_functions[0][0].saved_tensors[0].size(1)
-                conv_param['group'] = conv_param['num_output']
-                conv_param['kernel_size'] = (2 * factor - factor % 2)
-                conv_param['stride'] = factor
-                conv_param['pad'] = int(np.ceil((factor - 1) / 2.))
-                conv_param['weight_filler'] = {'type': 'bilinear'}
-                conv_param['bias_term'] = 'false'
+                conv_param['num_output'] = weights.size(1)
+                conv_param['pad_h'] = func.padding[0]
+                conv_param['pad_w'] = func.padding[1]
+                conv_param['kernel_h'] = weights.size(2)
+                conv_param['kernel_w'] = weights.size(3)
+                conv_param['stride'] = func.stride[0]
+                conv_param['dilation'] = func.dilation[0]
+                if func.next_functions[2][0] == None:
+                    conv_param['bias_term'] = 'false'
                 layer['convolution_param'] = conv_param
-                layer['param'] = {'lr_mult': 0, 'decay_mult': 0}
+
+#                conv_param = OrderedDict()
+#                factor = func.stride[0]
+#                conv_param['num_output'] = func.next_functions[0][0].saved_tensors[0].size(1)
+#                conv_param['group'] = conv_param['num_output']
+#                conv_param['kernel_size'] = (2 * factor - factor % 2)
+#                conv_param['stride'] = factor
+#                conv_param['pad'] = int(np.ceil((factor - 1) / 2.))
+#                conv_param['weight_filler'] = {'type': 'bilinear'}
+#                conv_param['bias_term'] = 'false'
+#                layer['convolution_param'] = conv_param
+#                layer['param'] = {'lr_mult': 0, 'decay_mult': 0}
             else:
                 weights = func.next_functions[1][0].variable
                 conv_param = OrderedDict()
@@ -271,13 +286,13 @@ def pytorch2prototxt(input_var, output_var):
 
         elif parent_type == 'ThresholdBackward':
             parent_top = parent_bottoms[0]
-        elif parent_type == 'MaxPool2dBackward':
+        elif parent_type == 'MaxPool2DBackward':
             pooling_param = OrderedDict()
             pooling_param['pool'] = 'MAX'
-            pooling_param['kernel_size'] = func.kernel_size[0]
-            pooling_param['stride'] = func.stride[0]
+            pooling_param['kernel_size'] = 2 #func.kernel_size[0]
+            pooling_param['stride'] = 2 #func.stride[0]
             # http://netaz.blogspot.com/2016/08/confused-about-caffes-pooling-layer.html
-            padding = func.padding[0]
+            padding = 0 #func.padding[0]
             # padding = 0 if func.padding[0] in {0, 1} else func.padding[0]
             pooling_param['pad'] = padding
             layer['pooling_param'] = pooling_param
